@@ -1,5 +1,6 @@
 import java.util.Arrays;
 import java.util.Random;
+import java.util.Scanner;
 
 public class App {
     static final int[] tamanhosTesteGrande =  { 31_250_000, 62_500_000, 125_000_000, 250_000_000, 500_000_000 };
@@ -8,6 +9,32 @@ public class App {
     static Random aleatorio = new Random();
     static long operacoes;
     static double nanoToMilli = 1.0/1_000_000;
+
+    private static IOrdenador<Integer> selecionarOrdenador(int opcao) {
+        switch (opcao) {
+            case 1:
+                return new BubbleSort<>();
+            case 2:
+                return new InsertionSort<>();
+            case 3:
+                return new Mergesort<>();
+            default:
+                return null;
+        }
+    }
+
+    private static String nomeMetodo(int opcao) {
+        switch (opcao) {
+            case 1:
+                return "Bolha";
+            case 2:
+                return "Inserção";
+            case 3:
+                return "MergeSort";
+            default:
+                return "Desconhecido";
+        }
+    }
     
 
     /**
@@ -40,19 +67,33 @@ public class App {
     public static void main(String[] args) {
         int tam = 20;
         Integer[] vetor = gerarVetorObjetos(tam);
+        System.out.println("Vetor original:");
+        System.out.println(Arrays.toString(vetor));
 
-        BubbleSort<Integer> bolha = new BubbleSort<>();
+        System.out.println("\nEscolha o método de ordenação:");
+        System.out.println("1 - BubbleSort");
+        System.out.println("2 - InsertionSort");
+        System.out.println("3 - MergeSort");
 
-        Integer[] vetorOrdenadoBolha = bolha.ordenar(vetor);
+        Scanner scanner = new Scanner(System.in);
+        int opcao = scanner.nextInt();
 
-        System.out.println("\nVetor ordenado método Bolha:");
-        System.out.println("Comparações: " + bolha.getComparacoes());
-        System.out.println("Movimentações: " + bolha.getMovimentacoes());
-        System.out.println("Tempo de ordenação (ms): " + bolha.getTempoOrdenacao());
+        IOrdenador<Integer> ordenador = selecionarOrdenador(opcao);
 
-        /* TO DO
-        *Fazer a implementacao do restante do main para a ordenacao 
-        *  com os algoritmos InsertionSort e SelectionSort
-        */
+        if (ordenador == null) {
+            System.out.println("Opção inválida.");
+            scanner.close();
+            return;
+        }
+
+        Integer[] vetorOrdenado = ordenador.ordenar(vetor);
+
+        System.out.println("\nVetor ordenado método " + nomeMetodo(opcao) + ":");
+        System.out.println(Arrays.toString(vetorOrdenado));
+        System.out.println("Comparações: " + ordenador.getComparacoes());
+        System.out.println("Movimentações: " + ordenador.getMovimentacoes());
+        System.out.println("Tempo de ordenação (ms): " + ordenador.getTempoOrdenacao());
+        scanner.close();
+
     }
 }
