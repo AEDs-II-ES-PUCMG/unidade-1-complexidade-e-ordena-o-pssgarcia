@@ -3,12 +3,12 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.Scanner;
 import java.io.File;
 import java.io.IOException;
+import java.io.PrintStream;
 import java.lang.reflect.InvocationTargetException;
 
 public class App {
@@ -245,24 +245,21 @@ public class App {
         }
 
         System.out.print("Informe o valor de corte (R$): ");
-        double corte = teclado.nextDouble();
+        double corte = Double.parseDouble(teclado.nextLine().replace(',', '.'));
 
         // Estratégia otimizada:
-        // 1) ordena por valor final (merge O(n log n))
-        // 2) pré-calcula valores uma única vez
-        // 3) busca binária do primeiro >= corte (O(log n))
-        Map<Pedido, Double> cacheValorFinal = new IdentityHashMap<>();
-        Comparator<Pedido> porValorFinal = Comparator
-                .comparingDouble((Pedido p) -> PedidoMetricas.valorFinal(p, cacheValorFinal))
-                .thenComparingInt(PedidoMetricas::volumeTotal)
-                .thenComparingInt(PedidoMetricas::codigoPrimeiroItem);
+        // 1) Ordena pedidosCadastrados por valorFinal crescente — O(n log n)
+        // 2) Busca binária encontra o primeiro >= corte          — O(log n)
+        // 3) Imprime apenas os elegíveis                         — O(k)
+        Map<Pedido, PedidoMetricas> cache = new IdentityHashMap<>();
+        IOrdenator<Pedido> ordenadorLocal = new Mergesort<>();
+        ordenadorLocal.setComparador(new ComparadorCriterioA(cache));
+        ordenadorLocal.ordenar(pedidosCadastrados);
 
-        mergeSort(pedidosCadastrados, quantPedidos, porValorFinal);
-
+        // Vetor de valores já calculados (sem recalcular)
         double[] valores = new double[quantPedidos];
-        for (int i = 0; i < quantPedidos; i++) {
-            valores[i] = PedidoMetricas.valorFinal(pedidosCadastrados[i], cacheValorFinal);
-        }
+        for (int i = 0; i < quantPedidos; i++)
+            valores[i] = PedidoMetricas.de(pedidosCadastrados[i], cache).valorFinal();
 
         int idx = lowerBound(valores, quantPedidos, corte);
         if (idx == quantPedidos) {
@@ -272,9 +269,7 @@ public class App {
 
         System.out.println("\n=== Pedidos Premium ===");
         for (int i = idx; i < quantPedidos; i++) {
-            Pedido p = pedidosCadastrados[i];
-            System.out.println(p);        
-            p.imprimirRecibo();           
+            pedidosCadastrados[i].imprimirRecibo();
             System.out.println("--------------------------------");
         }
     }
@@ -314,7 +309,6 @@ public class App {
             return;
         }
 
-        Comparator<Pedido> comparador = null;
         int criterio = lerInteiroMenu("""
                 === Critério de ordenação ===
                 1) Critério A - Valor Final (desempate: Volume, 1º Item)
@@ -322,15 +316,13 @@ public class App {
                 3) Critério C - Índice de Economia (DEC) (desempate: Valor Final, Código)
                 Escolha: """, 1, 3);
 
-        Map<Pedido, Double> cacheValorFinal = new IdentityHashMap<>();
-        Map<Pedido, Integer> cacheVolume = new IdentityHashMap<>();
-        Map<Pedido, Double> cacheEconomia = new IdentityHashMap<>();
-
-        switch (criterio) {
-            case 1 -> comparador = new ComparadorCriterioA(cacheValorFinal, cacheVolume);
-            case 2 -> comparador = new ComparadorCriterioB(cacheVolume);
-            case 3 -> comparador = new ComparadorCriterioC(cacheEconomia, cacheValorFinal);
-        }
+        // Cache único: uma PedidoMetricas por pedido, compartilhada por qualquer critério
+        Map<Pedido, PedidoMetricas> cache = new IdentityHashMap<>();
+        var comparador = switch (criterio) {
+            case 1 -> new ComparadorCriterioA(cache);
+            case 2 -> new ComparadorCriterioB(cache);
+            default -> new ComparadorCriterioC(cache);  // case 3
+        };
 
         int algoritmo = lerInteiroMenu("""
                 === Algoritmo de ordenação ===
@@ -341,109 +333,21 @@ public class App {
                 5) HeapSort
                 Escolha: """, 1, 5);
 
-        long ini = System.nanoTime();
-        switch (algoritmo) {
-            case 1 -> bubbleSort(pedidosCadastrados, quantPedidos, comparador);
-            case 2 -> selectionSort(pedidosCadastrados, quantPedidos, comparador);
-            case 3 -> insertionSort(pedidosCadastrados, quantPedidos, comparador);
-            case 4 -> mergeSort(pedidosCadastrados, quantPedidos, comparador);
-            case 5 -> heapSort(pedidosCadastrados, quantPedidos, comparador);
-        }
-        long fim = System.nanoTime();
+        IOrdenator<Pedido> ordenadorEscolhido = switch (algoritmo) {
+            case 1 -> new BubbleSort<>();
+            case 2 -> new SelectionSort<>();
+            case 3 -> new InsertionSort<>();
+            case 4 -> new Mergesort<>();
+            default -> new Heapsort<>();
+        };
 
-        double ms = (fim - ini) / 1_000_000.0;
-        System.out.printf("Tempo de ordenação: %.3f ms%n", ms);
+        ordenadorEscolhido.setComparador(comparador);
+        ordenadorEscolhido.ordenar(pedidosCadastrados);
+
+        System.out.printf("Tempo de ordenação: %.3f ms%n", ordenadorEscolhido.getTempoOrdenacao());
     }
 
-    private static void bubbleSort(Pedido[] v, int n, Comparator<Pedido> c) {
-        for (int i = 0; i < n - 1; i++) {
-            boolean trocou = false;
-            for (int j = 0; j < n - 1 - i; j++) {
-                if (c.compare(v[j], v[j + 1]) > 0) {
-                    Pedido tmp = v[j];
-                    v[j] = v[j + 1];
-                    v[j + 1] = tmp;
-                    trocou = true;
-                }
-            }
-            if (!trocou) break;
-        }
-    }
 
-    private static void selectionSort(Pedido[] v, int n, Comparator<Pedido> c) {
-        for (int i = 0; i < n - 1; i++) {
-            int min = i;
-            for (int j = i + 1; j < n; j++) {
-                if (c.compare(v[j], v[min]) < 0) min = j;
-            }
-            if (min != i) {
-                Pedido tmp = v[i];
-                v[i] = v[min];
-                v[min] = tmp;
-            }
-        }
-    }
-
-    private static void insertionSort(Pedido[] v, int n, Comparator<Pedido> c) {
-        for (int i = 1; i < n; i++) {
-            Pedido chave = v[i];
-            int j = i - 1;
-            while (j >= 0 && c.compare(v[j], chave) > 0) {
-                v[j + 1] = v[j];
-                j--;
-            }
-            v[j + 1] = chave;
-        }
-    }
-
-    private static void mergeSort(Pedido[] v, int n, Comparator<Pedido> c) {
-        Pedido[] aux = new Pedido[n];
-        mergeSortRec(v, aux, 0, n - 1, c);
-    }
-
-     private static void mergeSortRec(Pedido[] v, Pedido[] aux, int l, int r, Comparator<Pedido> c) {
-        if (l >= r) return;
-        int m = (l + r) >>> 1;
-        mergeSortRec(v, aux, l, m, c);
-        mergeSortRec(v, aux, m + 1, r, c);
-        merge(v, aux, l, m, r, c);
-    }
-
-    private static void merge(Pedido[] v, Pedido[] aux, int l, int m, int r, Comparator<Pedido> c) {
-        int i = l, j = m + 1, k = l;
-        while (i <= m && j <= r) {
-            if (c.compare(v[i], v[j]) <= 0) aux[k++] = v[i++];
-            else aux[k++] = v[j++];
-        }
-        while (i <= m) aux[k++] = v[i++];
-        while (j <= r) aux[k++] = v[j++];
-        for (int x = l; x <= r; x++) v[x] = aux[x];
-    }
-
-    private static void heapSort(Pedido[] v, int n, Comparator<Pedido> c) {
-        for (int i = n / 2 - 1; i >= 0; i--) heapify(v, n, i, c);
-        for (int end = n - 1; end > 0; end--) {
-            Pedido tmp = v[0];
-            v[0] = v[end];
-            v[end] = tmp;
-            heapify(v, end, 0, c);
-        }
-    }
-
-    private static void heapify(Pedido[] v, int n, int i, Comparator<Pedido> c) {
-        int maior = i;
-        int e = 2 * i + 1, d = 2 * i + 2;
-
-        if (e < n && c.compare(v[e], v[maior]) > 0) maior = e;
-        if (d < n && c.compare(v[d], v[maior]) > 0) maior = d;
-
-        if (maior != i) {
-            Pedido tmp = v[i];
-            v[i] = v[maior];
-            v[maior] = tmp;
-            heapify(v, n, maior, c);
-        }
-    }
 
     private static int lowerBound(double[] arr, int n, double alvo) {
         int l = 0, r = n;
@@ -458,9 +362,13 @@ public class App {
     private static int lerInteiroMenu(String msg, int min, int max) {
         while (true) {
             System.out.print(msg);
-            int op = teclado.nextInt();
-            if (op >= min && op <= max) return op;
-            System.out.println("Opção inválida.");
+
+            try {
+                int op = Integer.parseInt(teclado.nextLine().trim());
+                if (op >= min && op <= max) return op;
+            } catch (NumberFormatException e) {
+                System.out.println("Opção inválida.");
+            }
         }
     }
 
@@ -479,8 +387,12 @@ public class App {
     }
     
     public static void main(String[] args) {
-		
-    	teclado = new Scanner(System.in, Charset.forName("UTF-8"));
+        java.nio.charset.Charset cs = (System.console() != null)
+                ? System.console().charset()
+                : java.nio.charset.Charset.defaultCharset();
+        System.setOut(new PrintStream(System.out, true, cs));
+        System.setErr(new PrintStream(System.err, true, cs));
+        teclado = new Scanner(System.in, cs);
         
     	nomeArquivoDados = "produtos.txt";
         produtosCadastrados = lerProdutos(nomeArquivoDados);
@@ -493,10 +405,10 @@ public class App {
         ordenador.setComparador(comparadorPorData);
         pedidosOrdenadosPorData = ordenador.ordenar(pedidosCadastrados);
 
-        // Cria cópia independente ordenada por valorFinal() (crescente) para busca binária em localizarPedidosPremium
+        // Cópia independente ordenada por valorFinal (usada na busca binária de localizarPedidosPremium)
         pedidosOrdenadosPorValor = Arrays.copyOf(pedidosCadastrados, quantPedidos);
         IOrdenator<Pedido> ordenadorValor = new Heapsort<>();
-        ordenadorValor.setComparador(new ComparadorCriterioA());
+        ordenadorValor.setComparador(new ComparadorCriterioA(new IdentityHashMap<>()));
         pedidosOrdenadosPorValor = ordenadorValor.ordenar(pedidosOrdenadosPorValor);
 
         int opcao = -1;

@@ -2,78 +2,96 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.Map;
 
-public final class PedidoMetricas {
+/**
+ * Encapsula as métricas calculadas de um Pedido.
+ * O array de itens é obtido uma única vez no construtor e
+ * reutilizado por todos os métodos da instância.
+ * Os valores calculados são armazenados internamente (lazy cache),
+ * evitando recomputações dentro da mesma comparação.
+ */
+public class PedidoMetricas {
 
-    private PedidoMetricas() {}
+    private final Pedido pedido;
+    private final ItemDePedido[] itens;
+    private final int qtdItens;
 
-    public static double valorFinal(Pedido p) {
-        return valorFinal(p, null);
+    // Lazy cache interno
+    private Double _valorFinal;
+    private Integer _volumeTotal;
+    private Integer _codigoPrimeiroItem;
+    private Double _economiaReal;
+
+    public PedidoMetricas(Pedido pedido) {
+        this.pedido   = pedido;
+        this.itens    = pedido.getItens();
+        this.qtdItens = pedido.getQtdItens();
     }
 
-    public static double valorFinal(Pedido p, Map<Pedido, Double> cache) {
-        if (cache != null && cache.containsKey(p)) return cache.get(p);
+    /** Retorna o valor final do pedido (com desconto à vista se aplicável). */
+    public double valorFinal() {
+        if (_valorFinal == null)
+            _valorFinal = pedido.valorFinal();
+        return _valorFinal;
+    }
 
-        double total = 0.0;
-        ItemDePedido[] itens = p.getTotalItens();
-        for (ItemDePedido it : itens) {
-            if (it == null) continue;
-            total += it.getQuantidade() * it.getPrecoUnitarioRegistrado(); 
+    /** Retorna o total de unidades físicas encomendadas. */
+    public int volumeTotal() {
+        if (_volumeTotal == null) {
+            int vol = 0;
+            for (int i = 0; i < qtdItens; i++)
+                if (itens[i] != null) vol += itens[i].getQuantidade();
+            _volumeTotal = vol;
         }
-
-        if (cache != null) cache.put(p, total);
-        return total;
+        return _volumeTotal;
     }
 
-    public static int volumeTotal(Pedido p) {
-        return volumeTotal(p, null);
-    }
-
-    public static int volumeTotal(Pedido p, Map<Pedido, Integer> cache) {
-        if (cache != null && cache.containsKey(p)) return cache.get(p);
-
-        int vol = 0;
-        ItemDePedido[] itens = p.getTotalItens(); 
-        for (ItemDePedido it : itens) {
-            if (it == null) continue;
-            vol += it.getQuantidade();
-        }
-
-        if (cache != null) cache.put(p, vol);
-        return vol;
-    }
-
-    public static int codigoPrimeiroItem(Pedido p) {
-        ItemDePedido[] itens = p.getTotalItens();
-        for (ItemDePedido it : itens) {
-            if (it != null && it.getProduto() != null) {
-                return it.getProduto().hashCode();
+    /** Retorna o hashCode (ID) do primeiro produto do pedido. */
+    public int codigoPrimeiroItem() {
+        if (_codigoPrimeiroItem == null) {
+            _codigoPrimeiroItem = Integer.MAX_VALUE;
+            for (int i = 0; i < qtdItens; i++) {
+                if (itens[i] != null && itens[i].getProduto() != null) {
+                    _codigoPrimeiroItem = itens[i].getProduto().hashCode();
+                    break;
+                }
             }
         }
-        return Integer.MAX_VALUE;
+        return _codigoPrimeiroItem;
     }
 
-    public static double economiaReal(Pedido p, Map<Pedido, Double> cache) {
-        if (cache != null && cache.containsKey(p)) return cache.get(p);
-
-        double economia = 0.0;
-        ItemDePedido[] itens = p.getTotalItens();
-        for (ItemDePedido it : itens) {
-            if (it == null || it.getProduto() == null) continue;
-            double precoAtualCatalogo = it.getProduto().getPrecoVenda();
-            double precoRegistrado = it.getPrecoUnitarioRegistrado();
-            economia += (precoAtualCatalogo - precoRegistrado) * it.getQuantidade();
+    /**
+     * Retorna o índice de economia: diferença entre o valor de catálogo
+     * atual e o valor efetivamente pago (preço congelado).
+     */
+    public double economiaReal() {
+        if (_economiaReal == null) {
+            double eco = 0.0;
+            for (int i = 0; i < qtdItens; i++) {
+                if (itens[i] == null || itens[i].getProduto() == null) continue;
+                eco += (itens[i].getProduto().valorDeVenda() - itens[i].getPrecoVenda())
+                       * itens[i].getQuantidade();
+            }
+            _economiaReal = eco;
         }
-
-        if (cache != null) cache.put(p, economia);
-        return economia;
+        return _economiaReal;
     }
 
-    public static int codigoPedido(Pedido p) {
-        return p.getIdPrimeiroProduto();
+    /** Retorna o ID do pedido (usado como desempate final nos critérios B e C). */
+    public int codigoPedido() {
+        return pedido.getIdPedido();
     }
 
-    public static long dataEpoch(Pedido p) {
-        LocalDate d = p.getDataPedido();
+    /** Retorna a data do pedido em epoch seconds (para ordenação). */
+    public long dataEpoch() {
+        LocalDate d = pedido.getDataPedido();
         return d.atStartOfDay(ZoneId.systemDefault()).toEpochSecond();
+    }
+
+    /**
+     * Helper estático: obtém (ou cria) a instância de métricas
+     * para o pedido informado, usando o mapa como cache externo.
+     */
+    public static PedidoMetricas de(Pedido p, Map<Pedido, PedidoMetricas> cache) {
+        return cache.computeIfAbsent(p, PedidoMetricas::new);
     }
 }

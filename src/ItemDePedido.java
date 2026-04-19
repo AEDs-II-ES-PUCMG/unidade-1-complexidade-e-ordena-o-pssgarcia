@@ -43,6 +43,10 @@ public class ItemDePedido {
         return precoVenda;
     }
 
+    public double valorItem() {
+        return precoVenda * quantidade;
+    }
+
     /**
      * Representação em String do item, exibindo o nome do produto e o preço
      * congelado no momento da venda. Para produtos perecíveis, exibe também a

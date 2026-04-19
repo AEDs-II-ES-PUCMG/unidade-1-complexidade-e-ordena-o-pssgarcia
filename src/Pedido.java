@@ -96,7 +96,7 @@ public class Pedido implements Comparable<Pedido>{
         double soma = 0;
 
         for (int i = 0; i < quantItens; i++) {
-            soma += itens[i].getProduto().getPreco() * itens[i].getQuantidade();
+            soma += itens[i].valorItem();
         }
 
         BigDecimal somaBD = BigDecimal.valueOf(soma).setScale(2, RoundingMode.HALF_UP);
@@ -151,13 +151,7 @@ public class Pedido implements Comparable<Pedido>{
      */
     @Override
     public int compareTo(Pedido outro) {
-        if (this.idPedido == outro.idPedido) {
-            return 0;
-        } else if (this.idPedido < outro.idPedido) {
-            return -1;
-        } else {
-            return 1;
-        }
+        return this.idPedido - outro.idPedido;
     }
 
     public LocalDate getDataPedido() {
@@ -168,8 +162,11 @@ public class Pedido implements Comparable<Pedido>{
         return idPedido;
     }
 
-    /** Retorna a quantidade de itens (entradas distintas) no pedido. */
-    public int getQuantosProdutos() {
+    public ItemDePedido[] getItens() {
+        return itens;
+    }
+
+    public int getQtdItens() {
         return quantItens;
     }
 
@@ -194,5 +191,9 @@ public class Pedido implements Comparable<Pedido>{
             return itens[0].getProduto().hashCode();
         }
         return 0;
+    }
+
+    public void imprimirRecibo() {
+        System.out.println(this.toString());
     }
 }

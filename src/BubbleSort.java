@@ -1,6 +1,6 @@
 import java.util.Comparator;
 
-public class Bubblesort<T extends Comparable<T>> implements IOrdenator<T> {
+public class BubbleSort<T extends Comparable<T>> implements IOrdenator<T> {
 
 	private T[] dadosOrdenados;
 	private Comparator<T> comparador;
@@ -9,14 +9,14 @@ public class Bubblesort<T extends Comparable<T>> implements IOrdenator<T> {
 	private long inicio;
 	private long termino;
 	
-	public Bubblesort() {
+	public BubbleSort() {
 		
 		comparacoes = 0;
 		movimentacoes = 0;
 		setComparador(T::compareTo);
 	}
 	
-	public Bubblesort(Comparator<T> comparador) {
+	public BubbleSort(Comparator<T> comparador) {
 		
 		comparacoes = 0;
 		movimentacoes = 0;
